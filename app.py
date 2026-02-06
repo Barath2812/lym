@@ -1,17 +1,17 @@
 # =========================================
-# LYMPHOMA CANCER DETECTION — STREAMLIT
+# LYMPHOMA CANCER DETECTION — TFLITE
 # =========================================
 
 import streamlit as st
-import tensorflow as tf
 import numpy as np
 import cv2
 import json
 from PIL import Image
+import tensorflow as tf
 
 # ---------------- CONFIG ----------------
 IMG_SIZE = 256
-MODEL_PATH = "lymphoma_final_model.keras"
+MODEL_PATH = "lymphoma_final_model.tflite"
 CLASS_PATH = "class_names.json"
 
 st.set_page_config(
@@ -20,88 +20,56 @@ st.set_page_config(
     layout="centered"
 )
 
-# ---------------- LOAD MODEL & CLASSES ----------------
+# ---------------- LOAD TFLITE MODEL ----------------
 @st.cache_resource
-def load_model_and_classes():
-    model = tf.keras.models.load_model(
-        MODEL_PATH,
-        compile=False,
-        safe_mode=False
-    )
+def load_tflite_and_classes():
+    interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
+    interpreter.allocate_tensors()
+
     with open(CLASS_PATH, "r") as f:
         class_names = json.load(f)
-    return model, class_names
 
+    return interpreter, class_names
 
-model, class_names = load_model_and_classes()
+interpreter, class_names = load_tflite_and_classes()
 
-# EfficientNet preprocessing (MUST match training)
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+# EfficientNet preprocessing
 preprocess = tf.keras.applications.efficientnet.preprocess_input
 
-# ---------------- CUSTOM CSS ----------------
-st.markdown("""
-<style>
-.main {
-    background-color: #f9fafc;
-}
-h1 {
-    color: #2c2c2c;
-}
-.stButton > button {
-    background-color: #6a1b9a;
-    color: white;
-    border-radius: 8px;
-    height: 45px;
-    font-size: 16px;
-    width: 100%;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ---------------- HEADER ----------------
+# ---------------- UI ----------------
 st.title("🧪 Lymphoma Cancer Detection System")
-st.caption("AI-powered histopathology image classification using EfficientNet")
+st.caption("EfficientNet-based histopathology image classification")
 
 st.divider()
 
-# ---------------- IMAGE UPLOAD ----------------
 uploaded_file = st.file_uploader(
     "📤 Upload Histopathology Image",
     type=["jpg", "jpeg", "png"]
 )
 
-if uploaded_file is not None:
+if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
-
-    st.image(
-        image,
-        caption="Uploaded Image",
-        width="stretch"
-    )
-
-    st.markdown("### 🔍 Analysis")
+    st.image(image, caption="Uploaded Image", width="stretch")
 
     if st.button("🔬 Predict Lymphoma Type"):
-        with st.spinner("Analyzing image… Please wait"):
-            try:
-                # -------- PREPROCESS IMAGE --------
-                img = np.array(image)
-                img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
-                img = np.expand_dims(img, axis=0)
-                img = preprocess(img)   # 🔥 CRITICAL FIX
+        with st.spinner("Analyzing image…"):
+            img = np.array(image)
+            img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
+            img = np.expand_dims(img, axis=0)
+            img = preprocess(img).astype(np.float32)
 
-                # -------- PREDICTION --------
-                preds = model.predict(img, verbose=0)[0]
-                class_index = int(np.argmax(preds))
-                confidence = float(preds[class_index]) * 100
+            interpreter.set_tensor(input_details[0]["index"], img)
+            interpreter.invoke()
 
-                # -------- OUTPUT --------
-                st.success(f"🧪 Prediction: **{class_names[class_index]}**")
-                st.progress(int(confidence))
-                st.info(f"Confidence: **{confidence:.2f}%**")
+            preds = interpreter.get_tensor(output_details[0]["index"])[0]
+            idx = int(np.argmax(preds))
+            confidence = float(preds[idx]) * 100
 
-            except Exception as e:
-                st.error(f"❌ Prediction failed: {e}")
+            st.success(f"🧪 Prediction: **{class_names[idx]}**")
+            st.progress(int(confidence))
+            st.info(f"Confidence: **{confidence:.2f}%**")
 
-st.divider()
 st.caption("⚠️ For research and educational purposes only")
