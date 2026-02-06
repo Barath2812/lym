@@ -23,10 +23,15 @@ st.set_page_config(
 # ---------------- LOAD MODEL & CLASSES ----------------
 @st.cache_resource
 def load_model_and_classes():
-    model = tf.keras.models.load_model(MODEL_PATH)
+    model = tf.keras.models.load_model(
+        MODEL_PATH,
+        compile=False,
+        safe_mode=False
+    )
     with open(CLASS_PATH, "r") as f:
         class_names = json.load(f)
     return model, class_names
+
 
 model, class_names = load_model_and_classes()
 
